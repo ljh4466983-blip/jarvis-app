@@ -117,4 +117,19 @@ object RecordStore {
             .sortedByDescending { it.callTime }
 
     fun pendingCount(ctx: Context) = all(ctx).count { it.status == Status.REVIEW }
+
+    /**
+     * 통화 기록(녹취록·요약·일정 초안) 삭제.
+     * 휴대폰의 원본 통화녹음 파일과 이미 캘린더에 등록한 일정은 지우지 않는다.
+     * 처리 완료 표시는 남겨 두어 같은 녹음이 다시 자동 분석되지 않게 한다.
+     */
+    @Synchronized
+    fun delete(ctx: Context, id: String): Boolean {
+        File(dir(ctx), "$id.tmp").delete()
+        return File(dir(ctx), "$id.json").delete()
+    }
+
+    /** 분석 중인 건을 뺀 모든 통화 기록 삭제. 삭제한 건수 반환 */
+    fun deleteAll(ctx: Context): Int =
+        all(ctx).filter { it.status != Status.PROCESSING }.count { delete(ctx, it.id) }
 }

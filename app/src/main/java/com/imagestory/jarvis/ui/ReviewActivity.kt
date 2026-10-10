@@ -60,9 +60,37 @@ fun ReviewScreen(id: String, close: () -> Unit) {
     val calName = calendars.firstOrNull { it.id == prefs.calendarId }?.let { "${it.name} (${it.account})" }
     val editable = rec.status == Status.REVIEW || rec.status == Status.NO_EVENT
     var showTranscript by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
+
+    if (confirmDelete) {
+        DeleteDialog(
+            title = "이 통화 기록을 삭제할까요?",
+            target = "${rec.contact.ifBlank { rec.fileName }} · ${Times.full(rec.callTime)}",
+            onConfirm = {
+                RecordStore.delete(ctx, rec.id)
+                Notifier.cancelRecord(ctx, rec.id)
+                Notifier.updateOngoing(ctx, Notifier.idleText(ctx))
+                Toast.makeText(ctx, "삭제했습니다", Toast.LENGTH_SHORT).show()
+                confirmDelete = false
+                close()
+            },
+            onDismiss = { confirmDelete = false },
+        )
+    }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text(rec.contact.ifBlank { "통화" } + " · 일정 확인") }) },
+        topBar = {
+            TopAppBar(
+                title = { Text(rec.contact.ifBlank { "통화" } + " · 일정 확인") },
+                actions = {
+                    if (rec.status != Status.PROCESSING) {
+                        TextButton(onClick = { confirmDelete = true }) {
+                            Text("삭제", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                },
+            )
+        },
         bottomBar = {
             if (editable) {
                 Surface(tonalElevation = 3.dp) {

@@ -34,10 +34,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.imagestory.jarvis.data.CalendarRepo
+import com.imagestory.jarvis.data.CallRecord
 import com.imagestory.jarvis.data.Prefs
 import com.imagestory.jarvis.data.RecordStore
 import com.imagestory.jarvis.data.Status
 import com.imagestory.jarvis.data.Times
+import com.imagestory.jarvis.service.Notifier
 import com.imagestory.jarvis.service.WatcherService
 import kotlinx.coroutines.delay
 
@@ -129,6 +131,37 @@ fun MainScreen() {
     var calId by remember { mutableLongStateOf(prefs.calendarId) }
     var showSettings by remember { mutableStateOf(prefs.openAiKey.isBlank() || prefs.anthropicKey.isBlank()) }
 
+    var deleteTarget by remember { mutableStateOf<CallRecord?>(null) }
+    var confirmDeleteAll by remember { mutableStateOf(false) }
+
+    deleteTarget?.let { r ->
+        DeleteDialog(
+            title = "이 통화 기록을 삭제할까요?",
+            target = "${r.contact.ifBlank { r.fileName }} · ${Times.full(r.callTime)}",
+            onConfirm = {
+                RecordStore.delete(ctx, r.id)
+                Notifier.cancelRecord(ctx, r.id)
+                Notifier.updateOngoing(ctx, Notifier.idleText(ctx))
+                deleteTarget = null; tick++
+            },
+            onDismiss = { deleteTarget = null },
+        )
+    }
+    if (confirmDeleteAll) {
+        DeleteDialog(
+            title = "통화 기록을 모두 삭제할까요?",
+            target = "분석 중인 건을 뺀 ${records.count { it.status != Status.PROCESSING }}건",
+            onConfirm = {
+                records.filter { it.status != Status.PROCESSING }.forEach { Notifier.cancelRecord(ctx, it.id) }
+                val n = RecordStore.deleteAll(ctx)
+                Notifier.updateOngoing(ctx, Notifier.idleText(ctx))
+                Toast.makeText(ctx, "${n}건을 삭제했습니다", Toast.LENGTH_SHORT).show()
+                confirmDeleteAll = false; tick++
+            },
+            onDismiss = { confirmDeleteAll = false },
+        )
+    }
+
     // 캘린더를 아직 안 골랐으면 첫 구글 캘린더 자동 선택
     LaunchedEffect(calendars) {
         if (calId < 0 && calendars.isNotEmpty()) { calId = calendars.first().id; prefs.calendarId = calId }
@@ -213,15 +246,29 @@ fun MainScreen() {
             }
 
             // ── 통화 기록
-            item { Text("통화 기록", style = MaterialTheme.typography.titleMedium) }
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text("통화 기록 ${records.size}건", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    if (records.any { it.status != Status.PROCESSING }) {
+                        TextButton(onClick = { confirmDeleteAll = true }) {
+                            Text("전체 삭제", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+            }
             if (records.isEmpty()) item { Text("아직 분석한 통화가 없습니다. 설치 이후의 통화부터 자동으로 분석합니다.", style = MaterialTheme.typography.bodySmall) }
             items(records, key = { it.id }) { r ->
                 Card(Modifier.fillMaxWidth().clickable { ctx.startActivity(ReviewActivity.intent(ctx, r.id)) }) {
-                    Column(Modifier.padding(14.dp)) {
+                    Column(Modifier.padding(start = 14.dp, top = 6.dp, end = 4.dp, bottom = 14.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(r.contact.ifBlank { r.fileName }, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f),
                                 maxLines = 1, overflow = TextOverflow.Ellipsis)
                             StatusChip(r.status)
+                            if (r.status != Status.PROCESSING) {
+                                TextButton(onClick = { deleteTarget = r }) {
+                                    Text("삭제", color = MaterialTheme.colorScheme.error)
+                                }
+                            } else Spacer(Modifier.width(12.dp))
                         }
                         Text(Times.full(r.callTime), style = MaterialTheme.typography.bodySmall)
                         val line = when {
@@ -247,6 +294,29 @@ fun MainScreen() {
             }
         }
     }
+}
+
+/** 삭제 확인 창. 무엇이 지워지고 무엇이 남는지 함께 보여 준다. */
+@Composable
+fun DeleteDialog(title: String, target: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(target, fontWeight = FontWeight.Bold)
+                Text("지워지는 것: 녹취록, 통화 요약, 할 일, 일정 초안")
+                Text("남는 것: 휴대폰의 원본 통화녹음 파일, 이미 캘린더에 등록한 일정",
+                    style = MaterialTheme.typography.bodySmall)
+                Text("삭제하면 되돌릴 수 없습니다.", color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) { Text("삭제", color = MaterialTheme.colorScheme.error) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+    )
 }
 
 @Composable

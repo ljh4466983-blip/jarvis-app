@@ -12,12 +12,25 @@ android {
         applicationId = "com.imagestory.jarvis"
         minSdk = 29          // Android 10+
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
     }
 
+    // 고정 서명키: 새 버전을 받아도 기존 앱 위에 그대로 업데이트되게 한다
+    signingConfigs {
+        create("jarvis") {
+            storeFile = file("jarvis.keystore")
+            storePassword = "jarvis1988"
+            keyAlias = "jarvis"
+            keyPassword = "jarvis1988"
+        }
+    }
     buildTypes {
-        release { isMinifyEnabled = false }
+        debug { signingConfig = signingConfigs.getByName("jarvis") }
+        release {
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("jarvis")
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

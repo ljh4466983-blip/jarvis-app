@@ -82,6 +82,11 @@ object Notifier {
         post(ctx, id, n)
     }
 
+    /** 삭제한 통화 기록의 확인 요청 알림 지우기 */
+    fun cancelRecord(ctx: Context, recordId: String) {
+        NotificationManagerCompat.from(ctx).cancel(recordId.hashCode())
+    }
+
     @SuppressLint("MissingPermission")
     private fun post(ctx: Context, id: Int, n: Notification) {
         val nm = NotificationManagerCompat.from(ctx)
